@@ -7,12 +7,12 @@ import (
 )
 
 func main() {
-	origin := "030070000020040060000830520004008600000000738180700040090057000008090400003200010"
+	origin := "300900000007000250500000010000102079000008100000004000070000000020070045001300006"
 	sd := sudo.FromStr(origin)
 	var start = time.Now()
 	resolve := sd.Resolve()
 	var stop = time.Now()
-	fmt.Printf("cost time %d ns.\n", stop.Nanosecond()-start.Nanosecond())
+	fmt.Printf("cost time %.4f ms.\n", float64(stop.Nanosecond()-start.Nanosecond())/1000000)
 	fmt.Println(resolve)
 	fmt.Println(origin)
 	fmt.Println(sd.ToStr())

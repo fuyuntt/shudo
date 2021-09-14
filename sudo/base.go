@@ -17,7 +17,11 @@ func init() {
 	}
 }
 
-const emptyNum Num = 0x1ff
+const (
+	emptyNum Num = 0x1ff
+	one      Num = 0x001
+	nine     Num = 0x100
+)
 
 type Num int16
 
@@ -53,17 +57,6 @@ func FromStr(str string) *Sudo {
 		}
 	}
 	return &res
-}
-
-func (s *Sudo) Iter(fromR, fromC int, f func(r int, c int, n Num) bool) bool {
-	for i := fromR; i < 9; i++ {
-		for j := fromC; j < 9; j++ {
-			if !f(i, j, s[i*9+j]) {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 func (s *Sudo) PrintStr() string {
@@ -108,14 +101,14 @@ func (s *Sudo) deduction(st *state, idx int) bool {
 	r := idx / 9
 	c := idx % 9
 	ce := cell(r, c)
-	for i := int8(0); i < 9; i++ {
-		if st.check(r, c, ce, i+1) {
-			st.add(r, c, ce, i+1)
-			s[idx] = toNum(i + 1)
+	for i := one; i <= nine; i <<= 1 {
+		if st.check(r, c, ce, i) {
+			s[idx] = i
+			st.add(r, c, ce, i)
 			if s.deduction(st, idx+1) {
 				return true
 			}
-			st.rm(r, c, ce, i+1)
+			st.rm(r, c, ce, i)
 			s[idx] = emptyNum
 		}
 	}
@@ -129,27 +122,26 @@ type state struct {
 }
 
 func (s *state) initState(sd Sudo) {
-	sd.Iter(0, 0, func(r int, c int, n Num) bool {
+	for i := 0; i < 81; i++ {
+		r := i / 9
+		c := i % 9
+		n := sd[i]
 		if n != emptyNum {
 			s.rows[r] |= n
 			s.cols[c] |= n
 			s.cells[cell(r, c)] |= n
 		}
-		return true
-	})
+	}
 }
-func (s *state) check(r, c, cell int, x int8) bool {
-	n := Num(1 << (x - 1))
-	return (s.rows[r]|s.cols[c]|s.cells[cell])&n == 0
+func (s *state) check(r, c, cell int, x Num) bool {
+	return (s.rows[r]|s.cols[c]|s.cells[cell])&x == 0
 }
-func (s *state) add(r, c, cell int, x int8) {
-	n := Num(1 << (x - 1))
+func (s *state) add(r, c, cell int, n Num) {
 	s.rows[r] |= n
 	s.cols[c] |= n
 	s.cells[cell] |= n
 }
-func (s *state) rm(r, c, cell int, x int8) {
-	n := Num(1 << (x - 1))
+func (s *state) rm(r, c, cell int, n Num) {
 	s.rows[r] &= ^n
 	s.cols[c] &= ^n
 	s.cells[cell] &= ^n
