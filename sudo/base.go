@@ -17,63 +17,24 @@ func init() {
 	}
 }
 
-type Num struct {
-	set   int16
-	count int8
-	exact int8
+const emptyNum Num = 0x1ff
+
+type Num int16
+
+func toNum(i int8) Num {
+	return 1 << (i - 1)
 }
 
-func (n *Num) IsExact() bool {
-	return n.count == 1
+func (n Num) Exact() int8 {
+	return bitMap[n]
 }
 
-func (n *Num) SetExact(exact int8) {
-	n.set = 1 << (exact - 1)
-	n.count = 1
-	n.exact = exact
-}
-
-func (n *Num) SetAll() {
-	n.set = 0x1ff
-	n.restore()
-}
-
-func (n *Num) Exact() int8 {
-	return n.exact
-}
-
-func (n *Num) Count() int8 {
-	return n.count
-}
-
-func (n *Num) Exclude(o *Num) {
-	n.set &= ^o.set
-	n.restore()
-}
-func (n *Num) restore() {
-	n.count = countBit(n.set)
-	if n.count == 1 {
-		n.exact = bitMap[n.set]
-	}
-}
-func (n *Num) PrintStr() string {
-	if n.IsExact() {
-		return strconv.Itoa(int(n.exact))
+func (n Num) PrintStr() string {
+	if n != emptyNum {
+		return strconv.Itoa(int(n.Exact()))
 	} else {
 		return "_"
 	}
-}
-func (n *Num) MaxNum() int8 {
-	return bitMap[n.set]
-}
-
-func countBit(n int16) int8 {
-	var i int8
-	for n > 0 {
-		n &= n - 1
-		i++
-	}
-	return i
 }
 
 type Sudo [81]Num
@@ -85,39 +46,19 @@ func FromStr(str string) *Sudo {
 			idx := i*9 + j
 			n := str[idx] - '0'
 			if n == 0 {
-				res[idx].SetAll()
+				res[idx] = emptyNum
 			} else {
-				res[idx].SetExact(int8(n))
+				res[idx] = toNum(int8(n))
 			}
 		}
 	}
-	var rows [9]int16
-	var cols [9]int16
-	var cells [9]int16
-	res.Iter(func(r int, c int, cell int, n *Num) bool {
-		if n.IsExact() {
-			rows[r] |= n.set
-			cols[c] |= n.set
-			cells[cell] |= n.set
-		}
-		return true
-	})
-	res.Iter(func(r int, c int, cell int, n *Num) bool {
-		if !n.IsExact() {
-			n.set &= ^rows[r]
-			n.set &= ^cols[c]
-			n.set &= ^cells[cell]
-			n.restore()
-		}
-		return true
-	})
 	return &res
 }
 
-func (s *Sudo) Iter(f func(r int, c int, cell int, n *Num) bool) bool {
-	for i := 0; i < 9; i++ {
-		for j := 0; j < 9; j++ {
-			if !f(i, j, i/3*3+j/3, &s[i*9+j]) {
+func (s *Sudo) Iter(fromR, fromC int, f func(r int, c int, n Num) bool) bool {
+	for i := fromR; i < 9; i++ {
+		for j := fromC; j < 9; j++ {
+			if !f(i, j, s[i*9+j]) {
 				return false
 			}
 		}
@@ -143,40 +84,76 @@ func (s *Sudo) PrintStr() string {
 	}
 	return sb.String()
 }
-
-func (s *Sudo) Resolve() {
-
+func (s *Sudo) ToStr() string {
+	sb := strings.Builder{}
+	for i := 0; i < len(s); i++ {
+		sb.WriteString(s[i].PrintStr())
+	}
+	return sb.String()
 }
 
-func (s *Sudo) fuzzyDeduction() bool {
-	return !s.Iter(func(r int, c int, cell int, n *Num) bool {
-		if n.IsExact() {
-			return true
-		}
-		origin := Num{set: n.set, count: n.count, exact: n.exact}
-		for i := 0; i < 9; i++ {
-			if (origin.set>>i)&1 == 1 {
-				n.SetExact(int8(i + 1))
-				res := s.strictDeduction(r, c, cell, n)
-				if res {
-					return false
-				}
+func (s *Sudo) Resolve() bool {
+	var st state
+	st.initState(*s)
+	return s.deduction(&st, 0)
+}
+
+func (s *Sudo) deduction(st *state, idx int) bool {
+	if idx >= 81 {
+		return true
+	}
+	if s[idx] != emptyNum {
+		return s.deduction(st, idx+1)
+	}
+	r := idx / 9
+	c := idx % 9
+	ce := cell(r, c)
+	for i := int8(0); i < 9; i++ {
+		if st.check(r, c, ce, i+1) {
+			st.add(r, c, ce, i+1)
+			s[idx] = toNum(i + 1)
+			if s.deduction(st, idx+1) {
+				return true
 			}
+			st.rm(r, c, ce, i+1)
+			s[idx] = emptyNum
 		}
-		n.set = origin.set
-		n.count = origin.count
-		n.exact = origin.exact
+	}
+	return false
+}
+
+type state struct {
+	rows  [9]Num
+	cols  [9]Num
+	cells [9]Num
+}
+
+func (s *state) initState(sd Sudo) {
+	sd.Iter(0, 0, func(r int, c int, n Num) bool {
+		if n != emptyNum {
+			s.rows[r] |= n
+			s.cols[c] |= n
+			s.cells[cell(r, c)] |= n
+		}
 		return true
 	})
 }
-func (s *Sudo) strictDeduction(r int, c int, cell int, n *Num) bool {
-	s.Iter(func(r_ int, c_ int, cell_ int, n_ *Num) bool {
-		if n_.IsExact() {
-			return true
-		}
-		if r_ == r {
-
-		}
-	})
-	return true, 0, 0
+func (s *state) check(r, c, cell int, x int8) bool {
+	n := Num(1 << (x - 1))
+	return (s.rows[r]|s.cols[c]|s.cells[cell])&n == 0
+}
+func (s *state) add(r, c, cell int, x int8) {
+	n := Num(1 << (x - 1))
+	s.rows[r] |= n
+	s.cols[c] |= n
+	s.cells[cell] |= n
+}
+func (s *state) rm(r, c, cell int, x int8) {
+	n := Num(1 << (x - 1))
+	s.rows[r] &= ^n
+	s.cols[c] &= ^n
+	s.cells[cell] &= ^n
+}
+func cell(i, j int) int {
+	return i/3*3 + j/3
 }
